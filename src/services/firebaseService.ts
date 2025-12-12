@@ -1,5 +1,5 @@
 import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
-// ✅ Keep imports at the top
+// ✅ PERBAIKAN FATAL: Import dari firebaseConfig, BUKAN apiConfig
 import { db, auth } from '../config/firebaseConfig'; 
 
 // Nama koleksi di database Firestore
@@ -8,15 +8,21 @@ const COLLECTION_NAME = 'food_history';
 // 1. Fungsi SIMPAN Makanan (Dipakai di ResultScreen)
 export const saveFoodToHistory = async (foodData: any) => {
   try {
-    // ✅ Correct usage for Web SDK: auth.currentUser (no parentheses)
+    // Cek keamanan ganda: Pastikan auth object ada dulu
+    if (!auth) {
+      console.error("❌ SISTEM ERROR: Variable 'auth' tidak ditemukan. Cek firebaseConfig.");
+      return false;
+    }
+
     const user = auth.currentUser;
     
     if (!user) {
-      console.error("User belum login, tidak bisa simpan data.");
+      console.error("⚠️ User belum login, data tidak bisa disimpan.");
       return false;
     }
 
     // Path: users -> [UID] -> food_history -> [Data]
+    // Ini struktur yang BAGUS (Nested Collection), data user terpisah rapi.
     const docRef = await addDoc(collection(db, 'users', user.uid, COLLECTION_NAME), {
       ...foodData,
       timestamp: new Date().toISOString() // Simpan waktu scan
@@ -24,6 +30,7 @@ export const saveFoodToHistory = async (foodData: any) => {
 
     console.log("✅ Data berhasil disimpan! ID:", docRef.id);
     return true;
+
   } catch (e) {
     console.error("❌ Error adding document: ", e);
     return false;
@@ -33,11 +40,13 @@ export const saveFoodToHistory = async (foodData: any) => {
 // 2. Fungsi AMBIL History (Dipakai di HistoryScreen)
 export const getFoodHistory = async () => {
   try {
-    // ✅ Correct usage for Web SDK
+    // Cek keamanan
+    if (!auth) return [];
+    
     const user = auth.currentUser;
 
     if (!user) {
-        console.log("No user logged in");
+        console.log("User belum login, history kosong.");
         return [];
     }
 
@@ -53,6 +62,7 @@ export const getFoodHistory = async () => {
       id: doc.id,
       ...doc.data()
     }));
+
   } catch (e) {
     console.error("❌ Error getting documents: ", e);
     return [];

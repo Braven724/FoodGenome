@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Button, StyleSheet, Alert } from 'react-native';
 import { signOut } from 'firebase/auth';
-import { auth } from '../config/firebaseConfig';
+import { auth } from '../config/apiConfig';
 
 export default function ProfileScreen({ navigation }: any) {
   const user = auth.currentUser;

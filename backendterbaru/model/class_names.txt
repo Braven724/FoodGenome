@@ -1,0 +1,23 @@
+Apple
+Avocado
+Ayam Goreng
+Banana
+Blackberry
+Burger
+Cherry
+French Fries
+Gado-Gado
+Grape
+Ikan Goreng
+Mango
+Mie Goreng
+Nasi Goreng
+Nasi Padang
+Peach
+Pear
+Pizza
+Rawon
+Rendang
+Sate
+Soto
+Tomato

@@ -1,77 +1,67 @@
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-react-native';
-import { decodeJpeg } from '@tensorflow/tfjs-react-native';
-import * as FileSystem from 'expo-file-system/legacy';
-// ✅ NEW IMPORT
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { API_URL, API_CONFIG } from '../config/apiConfig';
 
-const MODEL_URL = 'https://storage.googleapis.com/tfjs-models/savedmodel/mobilenet_v2_1.0_224/model.json';
-
-export const setupTensorFlow = async () => {
-  await tf.ready();
-  console.log("✅ TensorFlow Ready!");
-};
-
-export const loadModel = async () => {
+export const classifyImage = async (imageUri: string) => {
   try {
-    console.log("⏳ Downloading AI Model...");
-    const model = await tf.loadGraphModel(MODEL_URL);
-    console.log("✅ Model Loaded Successfully!");
-    return model;
-  } catch (error) {
-    console.error("❌ Error loading model:", error);
-    return null;
-  }
-};
+    console.log("📤 Mengirim gambar ke Backend:", API_URL);
 
-export const classifyImage = async (model: tf.GraphModel, imageUri: string) => {
-  try {
-    console.log("🖼️ Processing Image...");
-
-    // ✅ FIX: FORCE CONVERT TO JPEG & RESIZE NATIVELY
-    // This fixes "Not a valid JPEG" error if user uploads PNG/HEIC
+    // 1. KOMPRES GAMBAR 
+    // Backend kamu ada limit 5MB (MAX_FILE_SIZE), jadi kita kecilkan dulu biar aman & cepat.
     const manipResult = await manipulateAsync(
       imageUri,
-      [{ resize: { width: 224, height: 224 } }], // Resize here is faster than TFJS
-      { compress: 1, format: SaveFormat.JPEG }   // Force JPEG format
+      [{ resize: { width: 640 } }], // Lebar 640px sudah cukup untuk AI mendeteksi
+      { compress: 0.7, format: SaveFormat.JPEG }
     );
 
-    // 1. Read the NEW converted image
-    const imgB64 = await FileSystem.readAsStringAsync(manipResult.uri, {
-      encoding: FileSystem.EncodingType.Base64,
+    // 2. BUNGKUS DATA (FormData)
+    // PENTING: nama 'image' ini harus SAMA PERSIS dengan backend (request.files['image'])
+    const formData = new FormData();
+    formData.append('image', {
+      uri: manipResult.uri,
+      name: 'food_upload.jpg',
+      type: 'image/jpeg',
+    } as any);
+
+    // 3. KIRIM KE SERVER (Fetch)
+    const uploadPromise = fetch(API_URL, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
-    
-    const imgBuffer = tf.util.encodeString(imgB64, 'base64');
-    
-    // 2. Preprocessing
-    const imageTensor = decodeJpeg(imgBuffer); // Now safe because it's guaranteed JPEG
-    
-    // Since we resized in manipulateAsync, we just need to normalize
-    const normalized = imageTensor.toFloat().div(127.5).sub(1).expandDims(0);
 
-    // 3. Prediksi
-    const result = await model.predict(normalized) as tf.Tensor;
-    
-    const softmaxResult = result.softmax(); 
-    const data = await softmaxResult.data();
+    // Timeout logic biar gak loading selamanya kalau server mati
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout - Server tidak merespon")), API_CONFIG.TIMEOUT)
+    );
 
-    // 4. Bersihkan Memori
-    tf.dispose([imageTensor, normalized, result, softmaxResult]);
+    const response: any = await Promise.race([uploadPromise, timeoutPromise]);
+    const result = await response.json();
 
-    // 5. Cari Hasil
-    const predictionArray = Array.from(data);
-    const maxVal = Math.max(...predictionArray);
-    const maxIndex = predictionArray.indexOf(maxVal);
+    console.log("✅ Respon Server:", result);
 
-    console.log(`🎯 AI Prediction: ID ${maxIndex} (Confidence: ${(maxVal*100).toFixed(2)}%)`);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal mengenali makanan");
+    }
 
+    // 4. FORMAT DATA UNTUK UI
+    // Mapping data dari JSON Backend (predict_utils.py) ke Frontend
     return {
-      index: maxIndex,
-      confidence: maxVal
+      success: true,
+      name: result.food,             // Backend kirim key "food"
+      confidence: result.confidence, // Backend kirim key "confidence"
+      nutrition: result.nutrition,   // Backend kirim "nutrition": {calories, protein...}
+      recommendation: result.recommendation // Backend kirim "recommendation"
     };
 
-  } catch (error) {
-    console.error("❌ Prediction Error:", error);
-    return null;
+  } catch (error: any) {
+    console.error("❌ Error aiService:", error.message);
+    return { 
+      success: false, 
+      error: error.message.includes("Network request failed") 
+        ? "Gagal konek. Cek IP Laptop & WiFi!" 
+        : error.message 
+    };
   }
 };
